@@ -107,7 +107,8 @@ resource "google_compute_instance" "db_instance" {
 }
 
 resource "google_compute_instance" "web_instance" {
-  name         = "web-instance"
+  count        = var.scale
+  name         = "web-instance-${count.index}"
   machine_type = "e2-small"
   tags         = ["web"]
   allow_stopping_for_update = true
@@ -131,13 +132,79 @@ resource "google_compute_instance" "web_instance" {
 
 }
 
+resource "google_compute_instance_group" "web_instance_group" {
+  name     = "web-instance-group"
+  zone     = var.zone
+  instances= google_compute_instance.web_instance[*].self_link
+
+  named_port {
+    name = "http"
+    port = "80"
+  }    
+}
+
+resource "google_compute_health_check" "http_health_check" {
+  name        = "http-health-check"
+  check_interval_sec  = 5
+  timeout_sec         = 5
+  healthy_threshold   = 2
+  unhealthy_threshold = 2
+
+  tcp_health_check {
+    port = "80"
+  }  
+}
+
+resource "google_compute_firewall" "allow_health_check" {
+  name    = "terraform-network-allow-health-check"
+  network = google_compute_network.vpc_network.name
+  allow {
+    protocol = "tcp"
+    ports    = ["80"]
+  }
+  # The source ranges for Google Cloud health checks
+  source_ranges = ["35.191.0.0/16", "130.211.0.0/22"]
+  target_tags   = ["web"]
+}
+
 output "db-ip" {
   value = google_compute_instance.db_instance.network_interface.0.network_ip
 }
 
 output "web-ip" {
-  value = google_compute_instance.web_instance.network_interface.0.network_ip
+  value = google_compute_instance.web_instance[*].network_interface.0.network_ip
 }
 output "external_ip" {
-  value = google_compute_instance.web_instance.network_interface.0.access_config.0.nat_ip
+  value = google_compute_instance.web_instance[*].network_interface.0.access_config.0.nat_ip
+}
+
+resource "google_compute_backend_service" "web_backend_service" {
+  name        = "web-backend-service"
+  port_name   = "http"
+  protocol    = "HTTP"
+  health_checks = [google_compute_health_check.http_health_check.id]
+
+  backend {
+    group = google_compute_instance_group.web_instance_group.id
+  }
+}
+
+resource "google_compute_url_map" "default" {
+  name            = "default-url-map"
+  default_service = google_compute_backend_service.web_backend_service.id
+}
+
+resource "google_compute_target_http_proxy" "http_proxy" {
+  name    = "http-load-balancer-proxy"
+  url_map = google_compute_url_map.default.id
+}
+
+resource "google_compute_global_forwarding_rule" "http_forwarding_rule" {
+  name               = "http-forwarding-rule"
+  target             = google_compute_target_http_proxy.http_proxy.id
+  port_range         = "80"
+}
+
+output "lb_ip_address" {
+  value = google_compute_global_forwarding_rule.http_forwarding_rule.ip_address
 }
