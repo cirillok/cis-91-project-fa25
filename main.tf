@@ -17,6 +17,11 @@ resource "google_compute_network" "vpc_network" {
   name = "terraform-network"
 }
 
+resource "google_service_account" "vm_sa" {
+  account_id   = "vm-instance-sa"
+  display_name = "Service Account for VM Instance"
+}
+
 resource "google_compute_firewall" "allow_ssh" {
   name    = "terraform-allow-ssh"
   network = google_compute_network.vpc_network.name
@@ -50,11 +55,6 @@ resource "google_compute_firewall" "allow_db" {
   }
   target_tags   = ["db"]
   source_tags = ["web"]
-}
-
-resource "google_service_account" "vm_sa" {
-  account_id   = "vm-instance-sa"
-  display_name = "Service Account for VM Instance"
 }
 
 resource "google_project_iam_member" "monitoring_writer" {

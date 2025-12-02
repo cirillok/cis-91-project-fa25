@@ -33,6 +33,27 @@
         regexp: '^bind-address'
         line: 'bind-address            =0.0.0.0'
       notify: Restart MariaDB
+    - name: Ensure /usr/local/bin exists
+      ansible.builtin.file:
+        path: /usr/local/bin
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+    - name: Copy backup script to DB server
+      ansible.builtin.copy:
+        src: backup.sh
+        dest: /usr/local/bin/backup.sh
+        owner: root
+        group: root
+        mode: '0755'
+    - name: Create cron job for daily DB backup
+      ansible.builtin.cron:
+        name: "Daily MySQL backup"
+        user: root
+        job: "/usr/local/bin/backup.sh"
+        hour: 2
+        minute: 0    
 
   handlers:
     - name: Restart MariaDB
@@ -74,3 +95,5 @@
       ansible.builtin.service:
         name: google-cloud-ops-agent
         state: restarted
+        enabled: yes
+      ignore_errors: yes
