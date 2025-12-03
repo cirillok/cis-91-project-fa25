@@ -15,6 +15,7 @@
         src: /dev/disk/by-id/google-persistent-disk-1
         fstype: ext4
         state: mounted
+    
     - name: Install packages 
       ansible.builtin.apt:
         update_cache: yes
@@ -22,17 +23,20 @@
         name:
           - mariadb-server
           - python3-pymysql
+    
     - name: Grant all privileges to mediawiki user
       community.mysql.mysql_query:
         login_user: root
         query: "GRANT ALL ON mediawiki.* TO 'mediawiki'@'%' IDENTIFIED BY 'mediawiki';"
         login_unix_socket: /run/mysqld/mysqld.sock
+    
     - name: Allow remote connections
       ansible.builtin.lineinfile:
         path: /etc/mysql/mariadb.conf.d/50-server.cnf
         regexp: '^bind-address'
         line: 'bind-address            =0.0.0.0'
       notify: Restart MariaDB
+    
     - name: Ensure /usr/local/bin exists
       ansible.builtin.file:
         path: /usr/local/bin
@@ -40,6 +44,7 @@
         owner: root
         group: root
         mode: '0755'
+    
     - name: Copy backup script to DB server
       ansible.builtin.copy:
         src: backup.sh
@@ -47,6 +52,7 @@
         owner: root
         group: root
         mode: '0755'
+    
     - name: Create cron job for daily DB backup
       ansible.builtin.cron:
         name: "Daily MySQL backup"
@@ -62,7 +68,7 @@
         state: restarted
 
 - hosts: tags_items___web__
-  name: Install Apache and PHP
+  name: Install Apache,PHP, Mediawiki and Ops Agent
   become: yes
   tasks:
     - name: Install packages 
@@ -74,6 +80,17 @@
           - php
           - mediawiki
           - python3-pymysql
+    - name: Download Ops Agent installer script
+      ansible.builtin.get_url:
+        url: https://dl.google.com/cloudagents/add-google-cloud-ops-agent-repo.sh
+        dest: /tmp/add-google-cloud-ops-agent-repo.sh
+        mode: '0755'
+    
+    - name: Install Google Cloud Ops Agent
+      ansible.builtin.command: bash /tmp/add-google-cloud-ops-agent-repo.sh --also-install
+      args:
+        creates: /etc/google-cloud-ops-agent
+    
     - name: Create google-cloud-ops-agent directory
       ansible.builtin.file:
         path: /etc/google-cloud-ops-agent
@@ -81,7 +98,8 @@
         owner: root
         group: root
         mode: '0755'
-    - name: Copy the google logging config
+    
+    - name: Copy the Google logging config
       ansible.builtin.copy:
         src: config.yaml
         dest: /etc/google-cloud-ops-agent/config.yaml
